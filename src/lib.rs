@@ -11,36 +11,32 @@ pub mod __private {
         value ^ (value >> 31)
     }
 
-    /// Hashes a string at compile time.
+    /// Hashes a string at compile time using FNV-1a 64-bit.
     pub const fn hash(data: &str) -> u64 {
         let bytes = data.as_bytes();
 
-        let mut hash: u64 = 0;
+        let mut hash = 0xcbf29ce484222325u64;
         let mut i = 0;
 
-        while i < data.len() {
-            let byte = bytes[i].to_ascii_lowercase();
-
-            hash = hash.wrapping_add(byte as u64);
-            hash = hash.wrapping_add(hash << 8);
-            hash ^= hash >> 11;
+        while i < bytes.len() {
+            hash ^= bytes[i] as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
 
             i += 1;
         }
-
-        hash = hash.wrapping_add(hash << 5);
-        hash ^= hash >> 13;
-        hash = hash.wrapping_add(hash << 10);
 
         hash
     }
 
     /// Generates a compile-time seed.
-    pub const fn seed(file: &str, line: u32, column: u32) -> u64 {
-        let hash = hash(file);
+    pub const fn seed(file: &str, line: u32, column: u32, value: &str) -> u64 {
+        let file_hash = hash(file);
+        let value_hash = hash(value);
 
         splitmix64(
-            hash.wrapping_add((line as u64).wrapping_mul(0x9e3779b97f4a7c15))
+            file_hash
+                .wrapping_add(value_hash.rotate_left(17))
+                .wrapping_add((line as u64).wrapping_mul(0x9e3779b97f4a7c15))
                 .wrapping_add((column as u64).wrapping_mul(0xbf58476d1ce4e5b9)),
         )
     }
@@ -66,7 +62,7 @@ pub mod __private {
     }
 
     /// Decrypts bytes at runtime.
-    #[inline]
+    #[inline(never)]
     pub fn decrypt(data: &[u8], seed: u64) -> Result<String, std::string::FromUtf8Error> {
         let mut output = Vec::with_capacity(data.len());
         let mut key = 0u64;
@@ -100,7 +96,7 @@ pub mod __private {
 #[macro_export]
 macro_rules! obfstr {
     ($value:literal) => {{
-        const SEED: u64 = $crate::__private::seed(file!(), line!(), column!());
+        const SEED: u64 = $crate::__private::seed(file!(), line!(), column!(), $value);
 
         const ENCRYPTED: [u8; $value.len()] =
             $crate::__private::encrypt::<{ $value.len() }>($value.as_bytes(), SEED);
