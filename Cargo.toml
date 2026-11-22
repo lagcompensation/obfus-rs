@@ -1,0 +1,8 @@
+[package]
+name = "obfus-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Compile-time and runtime obfuscation library"
+
+[lib]
+name = "obfus"
