@@ -1,9 +1,10 @@
 [package]
 name = "obfus-rs"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Compile-time and runtime obfuscation library"
 license = "MIT"
+rust-version = "1.100.0"
 repository = "https://github.com/lagcompensation/obfus-rs"
 readme = "README.md"
 keywords = ["obfuscation", "string", "xor", "compile-time"]

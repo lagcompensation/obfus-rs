@@ -1,15 +1,21 @@
 #![forbid(unsafe_code)]
+#![no_std]
+
+use core::fmt;
+use core::ops::Deref;
+
+/// SplitMix64 mixing function.
+#[inline]
+const fn splitmix64(mut value: u64) -> u64 {
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
+
+    value ^ (value >> 31)
+}
 
 #[doc(hidden)]
-pub mod __private {
-    /// SplitMix64 mixing function.
-    #[inline]
-    pub const fn splitmix64(mut value: u64) -> u64 {
-        value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-        value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
-
-        value ^ (value >> 31)
-    }
+pub mod detail {
+    use super::splitmix64;
 
     /// Hashes a string at compile time using FNV-1a 64-bit.
     pub const fn hash(data: &str) -> u64 {
@@ -46,40 +52,142 @@ pub mod __private {
         let mut output = [0u8; N];
         let mut i = 0;
 
+        let mut key: u64 = 0;
+
         while i < N {
-            let block = i / 8;
-            let offset = i % 8;
+            let offset = i & 7;
 
-            let key = splitmix64(seed.wrapping_add(block as u64));
-            let mask = (key >> (offset * 8)) as u8;
+            if offset == 0 {
+                key = splitmix64(seed.wrapping_add((i >> 3) as u64));
+            }
 
-            output[i] = data[i] ^ mask;
+            output[i] = data[i] ^ (key >> (offset * 8)) as u8;
 
             i += 1;
         }
 
         output
     }
+}
 
-    /// Decrypts bytes at runtime.
+/// A heap-allocation-free obfuscated string.
+pub struct ObfuscatedString<const N: usize> {
+    data: [u8; N],
+}
+
+impl<const N: usize> ObfuscatedString<N> {
+    /// Decrypts encrypted bytes at runtime.
     #[inline(never)]
-    pub fn decrypt(data: &[u8], seed: u64) -> Result<String, std::string::FromUtf8Error> {
-        let mut output = Vec::with_capacity(data.len());
+    pub fn new(data: &[u8; N], seed: u64) -> Self {
+        let mut output = [0u8; N];
         let mut key = 0u64;
 
-        for (index, &byte) in data.iter().enumerate() {
-            let block = index / 8;
-            let offset = index % 8;
+        let mut i = 0;
+
+        while i < N {
+            let offset = i & 7;
 
             if offset == 0 {
-                key = splitmix64(seed.wrapping_add(block as u64));
+                key = splitmix64(seed.wrapping_add((i >> 3) as u64));
             }
 
-            let mask = (key >> (offset * 8)) as u8;
-            output.push(byte ^ mask);
+            output[i] = data[i] ^ (key >> (offset * 8)) as u8;
+
+            i += 1;
         }
 
-        String::from_utf8(output)
+        Self {
+            data: core::hint::black_box(output),
+        }
+    }
+
+    /// Returns the string as a UTF-8 slice.
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.data).unwrap()
+    }
+
+    /// Returns the underlying bytes.
+    #[inline]
+    pub const fn as_bytes(&self) -> &[u8; N] {
+        &self.data
+    }
+
+    /// Returns the string length in bytes.
+    #[inline]
+    pub const fn len(&self) -> usize {
+        N
+    }
+
+    /// Returns whether the string is empty.
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        N == 0
+    }
+}
+
+impl<const N: usize> Deref for ObfuscatedString<N> {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl<const N: usize> AsRef<str> for ObfuscatedString<N> {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl<const N: usize> fmt::Display for ObfuscatedString<N> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl<const N: usize> fmt::Debug for ObfuscatedString<N> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.as_str(), f)
+    }
+}
+
+impl<const N: usize> PartialEq for ObfuscatedString<N> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.as_bytes() == other.as_bytes()
+    }
+}
+
+impl<const N: usize> PartialEq<str> for ObfuscatedString<N> {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl<const N: usize> PartialEq<ObfuscatedString<N>> for str {
+    #[inline]
+    fn eq(&self, other: &ObfuscatedString<N>) -> bool {
+        self == other.as_str()
+    }
+}
+
+impl<const N: usize> PartialEq<&str> for ObfuscatedString<N> {
+    #[inline]
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl<const N: usize> PartialEq<ObfuscatedString<N>> for &str {
+    #[inline]
+    fn eq(&self, other: &ObfuscatedString<N>) -> bool {
+        *self == other.as_str()
     }
 }
 
@@ -91,16 +199,17 @@ pub mod __private {
 ///
 /// ```
 /// let message = obfus::obfstr!("Hello, World!");
+///
 /// assert_eq!(message, "Hello, World!");
 /// ```
 #[macro_export]
 macro_rules! obfstr {
     ($value:literal) => {{
-        const SEED: u64 = $crate::__private::seed(file!(), line!(), column!(), $value);
+        const SEED: u64 = $crate::detail::seed(file!(), line!(), column!(), $value);
 
         const ENCRYPTED: [u8; $value.len()] =
-            $crate::__private::encrypt::<{ $value.len() }>($value.as_bytes(), SEED);
+            $crate::detail::encrypt::<{ $value.len() }>($value.as_bytes(), SEED);
 
-        $crate::__private::decrypt(&ENCRYPTED, SEED).unwrap()
+        $crate::ObfuscatedString::new(&ENCRYPTED, SEED)
     }};
 }
