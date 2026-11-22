@@ -3,6 +3,11 @@ name = "obfus-rs"
 version = "0.1.0"
 edition = "2024"
 description = "Compile-time and runtime obfuscation library"
+license = "Apache-2.0"
+repository = "https://github.com/lagcompensation/obfus-rs"
+readme = "README.md"
+keywords = ["obfuscation", "string", "xor", "compile-time"]
+categories = ["cryptography"]
 
 [lib]
 name = "obfus"
