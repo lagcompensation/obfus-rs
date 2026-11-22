@@ -19,13 +19,7 @@ pub mod __private {
         let mut i = 0;
 
         while i < data.len() {
-            let byte = bytes[i];
-
-            let byte = if byte >= b'A' && byte <= b'Z' {
-                byte + (b'a' - b'A')
-            } else {
-                byte
-            };
+            let byte = bytes[i].to_ascii_lowercase();
 
             hash = hash.wrapping_add(byte as u64);
             hash = hash.wrapping_add(hash << 8);
@@ -57,8 +51,11 @@ pub mod __private {
         let mut i = 0;
 
         while i < N {
-            let key = splitmix64(seed.wrapping_add(i as u64));
-            let mask = (key >> ((i % 8) * 8)) as u8;
+            let block = i / 8;
+            let offset = i % 8;
+
+            let key = splitmix64(seed.wrapping_add(block as u64));
+            let mask = (key >> (offset * 8)) as u8;
 
             output[i] = data[i] ^ mask;
 
@@ -70,17 +67,23 @@ pub mod __private {
 
     /// Decrypts bytes at runtime.
     #[inline]
-    pub fn decrypt(data: &[u8], seed: u64) -> String {
+    pub fn decrypt(data: &[u8], seed: u64) -> Result<String, std::string::FromUtf8Error> {
         let mut output = Vec::with_capacity(data.len());
+        let mut key = 0u64;
 
         for (index, &byte) in data.iter().enumerate() {
-            let key = splitmix64(seed.wrapping_add(index as u64));
-            let mask = (key >> ((index % 8) * 8)) as u8;
+            let block = index / 8;
+            let offset = index % 8;
 
+            if offset == 0 {
+                key = splitmix64(seed.wrapping_add(block as u64));
+            }
+
+            let mask = (key >> (offset * 8)) as u8;
             output.push(byte ^ mask);
         }
 
-        String::from_utf8(output).expect("invalid UTF-8 after decryption")
+        String::from_utf8(output)
     }
 }
 
@@ -102,6 +105,6 @@ macro_rules! obfstr {
         const ENCRYPTED: [u8; $value.len()] =
             $crate::__private::encrypt::<{ $value.len() }>($value.as_bytes(), SEED);
 
-        $crate::__private::decrypt(&ENCRYPTED, SEED)
+        $crate::__private::decrypt(&ENCRYPTED, SEED).unwrap()
     }};
 }
