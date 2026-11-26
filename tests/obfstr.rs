@@ -1,4 +1,5 @@
 use obfus::obfstr;
+use obfus::obfval;
 
 #[test]
 fn basic_string() {
@@ -78,4 +79,56 @@ fn multiple_call_sites() {
     assert_eq!(a, "same_string");
     assert_eq!(b, "same_string");
     assert_eq!(c, "different_string");
+}
+
+#[test]
+fn hash_consistent_with_eq() {
+    use core::hash::{Hash, Hasher};
+
+    fn hash_of<T: Hash>(value: &T) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    let a = obfstr!("same content");
+    let b = obfstr!("same content");
+
+    assert_eq!(a, b);
+    assert_eq!(hash_of(&a), hash_of(&b));
+}
+
+#[test]
+fn different_length_not_equal() {
+    let short = obfstr!("abc");
+    let long = obfstr!("abcdef");
+
+    assert_ne!(short, long);
+}
+
+#[test]
+fn obfval_roundtrip_u32() {
+    let value = obfval!(123u32);
+    assert_eq!(value.get(), 123u32);
+    assert_eq!(value, 123u32);
+}
+
+#[test]
+fn obfval_roundtrip_i64_negative() {
+    let value = obfval!(-123i64);
+    assert_eq!(value.get(), -123i64);
+}
+
+#[test]
+fn obfval_const_expr() {
+    const X: u16 = 7 * 6;
+    let value = obfval!(X);
+    assert_eq!(value.get(), 42u16);
+}
+
+#[test]
+fn obfval_eq_between_instances() {
+    let a = obfval!(999u64);
+    let b = obfval!(999u64);
+    assert_eq!(a, b);
 }
